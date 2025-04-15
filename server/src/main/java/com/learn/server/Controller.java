@@ -238,7 +238,7 @@ public class Controller {
                 }
             }
 
-            // Disambiguate column names by adding table prefixes as aliases
+            // Disambiguate column names by adding unique aliases
             StringBuilder aliasedColumns = new StringBuilder();
             for (String column : selectedColumns) {
                 if (table1Schema.contains(column)) {

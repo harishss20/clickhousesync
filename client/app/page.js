@@ -234,6 +234,26 @@ export default function DataIngestionTool() {
     }
 
     try {
+      // Validate selected columns against schemas of both tables
+      const table1SchemaResponse = await fetch(
+        `http://localhost:8080/api/clickhouse-schema?host=localhost&port=8123&database=default&user=default&password=1234&tableName=${table1}`
+      );
+      const table1Schema = await table1SchemaResponse.json();
+
+      const table2SchemaResponse = await fetch(
+        `http://localhost:8080/api/clickhouse-schema?host=localhost&port=8123&database=default&user=default&password=1234&tableName=${table2}`
+      );
+      const table2Schema = await table2SchemaResponse.json();
+
+      for (const column of selectedColumns) {
+        if (!table1Schema.includes(column) && !table2Schema.includes(column)) {
+          toast.error(
+            `Error: Column '${column}' does not exist in either table '${table1}' or '${table2}'.`
+          );
+          return;
+        }
+      }
+
       const response = await fetch(
         "http://localhost:8080/api/join-clickhouse-tables",
         {
@@ -286,10 +306,13 @@ export default function DataIngestionTool() {
   };
 
   const handleIngestionWithProgress = async () => {
-    if (!filePath || selectedColumns.length === 0) {
-      toast.error(
-        "Error: Please provide a file path and select at least one column."
-      );
+    if (!filePath) {
+      toast.error("Error: Please provide a file path.");
+      return;
+    }
+
+    if (selectedColumns.length === 0) {
+      toast.error("Error: Please select at least one column.");
       return;
     }
 
@@ -307,17 +330,17 @@ export default function DataIngestionTool() {
       );
 
       const reader = response.body.getReader();
-      const contentLength = +response.headers.get("Content-Length");
-      let receivedLength = 0;
-      let chunks = [];
+      const decoder = new TextDecoder("utf-8");
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        chunks.push(value);
-        receivedLength += value.length;
-        setProgress(Math.round((receivedLength / contentLength) * 100));
+        const chunk = decoder.decode(value, { stream: true });
+        const match = chunk.match(/data: (\d+)/); // Extract progress value
+        if (match) {
+          setProgress(parseInt(match[1]));
+        }
       }
 
       toast.success("Ingestion completed successfully.");
@@ -327,8 +350,13 @@ export default function DataIngestionTool() {
   };
 
   const handleIngestFlatFile = async () => {
-    if (!filePath || !tableName) {
-      toast.error("Error: Please select a file and specify a target table.");
+    if (!filePath) {
+      toast.error("Error: Please select a file.");
+      return;
+    }
+
+    if (selectedColumns.length === 0) {
+      toast.error("Error: Please select at least one column.");
       return;
     }
 
@@ -698,13 +726,6 @@ export default function DataIngestionTool() {
           <p className="text-sm text-gray-600 mt-2">{progress}% completed</p>
         </div>
       </div>
-
-      <button
-        onClick={handleStartIngestion}
-        className="bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600"
-      >
-        Start Ingestion
-      </button>
 
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-2">Status</h3>
