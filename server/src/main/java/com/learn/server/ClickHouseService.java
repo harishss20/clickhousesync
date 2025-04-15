@@ -53,4 +53,21 @@ public class ClickHouseService {
         Statement stmt = connection.createStatement();
         return stmt.executeQuery(query);
     }
+
+    public ResultSet executeQuery(Connection connection, String query) throws SQLException {
+        Statement statement = connection.createStatement();
+        return statement.executeQuery(query);
+    }
+
+    public List<String> getTables(Connection connection) throws SQLException {
+        List<String> tables = new ArrayList<>();
+        String query = "SHOW TABLES";
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(query)) {
+            while (resultSet.next()) {
+                tables.add(resultSet.getString(1));
+            }
+        }
+        return tables;
+    }
 }
