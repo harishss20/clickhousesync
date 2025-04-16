@@ -1,7 +1,11 @@
 package com.learn.server;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.HttpStatus;
+
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -137,50 +141,64 @@ public class Controller {
         }
     }
 
-    @PostMapping("/ingest-data")
-    public String ingestData(@RequestParam("file") MultipartFile file, @RequestParam("target") String target) {
-        try {
-            // Save the uploaded file to a temporary location
-            Path tempFile = Files.createTempFile("uploaded", file.getOriginalFilename());
-            Files.write(tempFile, file.getBytes());
+   @PostMapping("/ingest-data")
+public ResponseEntity<Map<String, Object>> ingestData(
+        @RequestParam("file") MultipartFile file,
+        @RequestParam("target") String target) {
+    Map<String, Object> response = new HashMap<>();
+    try {
+        // Save the uploaded file to a temporary location
+        Path tempFile = Files.createTempFile("uploaded", file.getOriginalFilename());
+        Files.write(tempFile, file.getBytes());
 
-            // Read the file content
-            List<String> lines = Files.readAllLines(tempFile);
-            if (lines.isEmpty()) {
-                return "Error: Uploaded file is empty.";
-            }
-
-            // Connect to ClickHouse and fetch the target table schema
-            try (Connection connection = clickHouseService.connectToClickHouse("localhost", "8123", "default", "default", "1234")) {
-                List<String> tableSchema = clickHouseService.getTableSchema(connection, target);
-
-                // Validate the CSV file against the table schema
-                String[] headers = lines.get(0).split(",");
-                if (headers.length != tableSchema.size()) {
-                    return "Error: The number of columns in the CSV file does not match the schema of the target table '" + target + "'.";
-                }
-
-                // Construct the INSERT query dynamically
-                String insertQuery = "INSERT INTO " + target + " (" + String.join(",", tableSchema) + ") VALUES (" +
-                                     String.join(",", tableSchema.stream().map(col -> "?").toArray(String[]::new)) + ")";
-
-                try (PreparedStatement preparedStatement = connection.prepareStatement(insertQuery)) {
-                    for (int i = 1; i < lines.size(); i++) { // Skip header row
-                        String[] values = lines.get(i).split(",");
-                        for (int j = 0; j < tableSchema.size(); j++) {
-                            preparedStatement.setObject(j + 1, values[j]);
-                        }
-                        preparedStatement.addBatch();
-                    }
-                    preparedStatement.executeBatch();
-                }
-            }
-
-            return "Flat file ingestion completed successfully.";
-        } catch (Exception e) {
-            return "Failed to ingest flat file data: " + e.getMessage();
+        // Read the file content
+        List<String> lines = Files.readAllLines(tempFile);
+        if (lines.isEmpty()) {
+            response.put("error", "Uploaded file is empty.");
+            return ResponseEntity.badRequest().body(response);
         }
+
+        int totalRecords = lines.size() - 1; // Excluding header row
+
+        // Connect to ClickHouse and fetch the target table schema
+        try (Connection connection = clickHouseService.connectToClickHouse(
+                "localhost", "8123", "default", "default", "1234")) {
+
+            List<String> tableSchema = clickHouseService.getTableSchema(connection, target);
+
+            // Validate the CSV file against the table schema
+            String[] headers = lines.get(0).split(",");
+            if (headers.length != tableSchema.size()) {
+                response.put("error", "The number of columns in the CSV file does not match the schema of the target table '" + target + "'.");
+                return ResponseEntity.badRequest().body(response);
+            }
+
+            // Construct the INSERT query dynamically
+            String insertQuery = "INSERT INTO " + target + " (" + String.join(",", tableSchema) + ") VALUES (" +
+                    String.join(",", tableSchema.stream().map(col -> "?").toArray(String[]::new)) + ")";
+
+            try (PreparedStatement preparedStatement = connection.prepareStatement(insertQuery)) {
+                for (int i = 1; i < lines.size(); i++) { // Skip header row
+                    String[] values = lines.get(i).split(",");
+                    for (int j = 0; j < tableSchema.size(); j++) {
+                        preparedStatement.setObject(j + 1, values[j]);
+                    }
+                    preparedStatement.addBatch();
+                }
+                preparedStatement.executeBatch();
+            }
+        }
+
+        response.put("message", "Flat file ingestion completed successfully.");
+        response.put("totalRecords", totalRecords);
+        return ResponseEntity.ok(response);
+
+    } catch (Exception e) {
+        response.put("error", "Failed to ingest flat file data: " + e.getMessage());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
+}
+
 
     @PostMapping("/clickhouse-ingest")
     public String ingestToClickHouse(@RequestParam String host, @RequestParam String port,
@@ -228,6 +246,15 @@ public class Controller {
         }
 
         try (Connection connection = clickHouseService.connectToClickHouse("localhost", "8123", "default", "default", "1234")) {
+            // Check if the target table already exists
+            String checkTableQuery = "EXISTS TABLE " + targetTable;
+            ResultSet resultSet = clickHouseService.executeQuery(connection, checkTableQuery);
+            if (resultSet.next() && resultSet.getBoolean(1)) {
+                // Drop the existing table to avoid conflicts
+                String dropTableQuery = "DROP TABLE " + targetTable;
+                clickHouseService.executeQuery(connection, dropTableQuery);
+            }
+
             // Validate selected columns against the schemas of both tables
             List<String> table1Schema = clickHouseService.getTableSchema(connection, table1);
             List<String> table2Schema = clickHouseService.getTableSchema(connection, table2);
@@ -238,18 +265,22 @@ public class Controller {
                 }
             }
 
-            // Disambiguate column names by adding unique aliases
+            // Construct the SELECT query with unique aliases for columns
             StringBuilder aliasedColumns = new StringBuilder();
             for (String column : selectedColumns) {
-                if (table1Schema.contains(column)) {
+                if (table1Schema.contains(column) && table2Schema.contains(column)) {
                     aliasedColumns.append(table1).append(".").append(column).append(" AS ").append(table1).append("_").append(column).append(",");
-                } else if (table2Schema.contains(column)) {
                     aliasedColumns.append(table2).append(".").append(column).append(" AS ").append(table2).append("_").append(column).append(",");
+                } else if (table1Schema.contains(column)) {
+                    aliasedColumns.append(table1).append(".").append(column).append(",");
+                } else if (table2Schema.contains(column)) {
+                    aliasedColumns.append(table2).append(".").append(column).append(",");
                 }
             }
             // Remove the trailing comma
             String columnList = aliasedColumns.substring(0, aliasedColumns.length() - 1);
 
+            // Use SELECT query to populate the target table
             String query = "CREATE TABLE " + targetTable + " ENGINE = MergeTree() ORDER BY tuple() AS " +
                            "SELECT " + columnList + " FROM " + table1 + " INNER JOIN " + table2 + " ON " + joinCondition;
 
