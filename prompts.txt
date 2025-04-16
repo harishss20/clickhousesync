@@ -1,0 +1,34 @@
+📑 Prompts Used in the Project (Humanized)
+🛠️ Setup and Configuration
+
+
+“How should I configure the application.properties file to properly connect to my ClickHouse database?”
+“Can you help me set up a Docker container for ClickHouse? I need to run it locally for development.”
+“Please provide a Docker Compose file that sets up a ClickHouse server with the necessary configurations.”
+
+⚙️ Error Handling
+
+“What should happen if a table with the same name already exists in ClickHouse? Let’s handle that gracefully.”
+
+
+“Show clear, user-friendly error messages if any important parameters (like file path, table name, or columns) are missing.”
+
+
+✨ UI Enhancements
+
+“Use React toast notifications to give users instant feedback — like success, failure, or warnings.”
+“Make sure the UI is responsive and user-friendly, especially when displaying large datasets.”
+
+“Display real-time status updates on the UI while a flat file is being ingested into ClickHouse.”
+
+🛠️ Debugging and Troubleshooting
+
+“Double-check that existing tables in ClickHouse are handled correctly — no duplicate table errors should sneak in.”
+
+“Help debug and resolve any Docker-related issues when working with ClickHouse containers and operations.”
+
+🔍 General Improvements
+
+“Review the entire codebase carefully and suggest any improvements or optimizations that can make it cleaner and more efficient.”
+
+“Keep a record of all the prompts, questions, and improvements we used in this project inside a file named prompts.txt.”
