@@ -31,4 +31,3 @@
 
 “Review the entire codebase carefully and suggest any improvements or optimizations that can make it cleaner and more efficient.”
 
-“Keep a record of all the prompts, questions, and improvements we used in this project inside a file named prompts.txt.”
